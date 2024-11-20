@@ -16,3 +16,6 @@ pillow
 pdf2image
 pypdf
 pytesseract
+unstructured_pytesseract
+pi_heif
+unstructured_inference

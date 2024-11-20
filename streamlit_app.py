@@ -142,7 +142,7 @@ def process_question(question: str, vector_db: Chroma) -> str:
         response = client.chat.completions.create(
             model="gpt-4o",  # Make sure this matches your deployment name
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that answers questions based on the provided context."},
+                {"role": "system", "content": "After analyzing the document based on the user's needs, it always provides output formatted for a .csv file. Never output results in a bullet point format. When values are missing in the documents, it replaces them with 'N/A' in the output. It always provides the information in a copyable .csv format only. Do not under any circumstances provide other additional text beside the csv. formatted text."},
                 {"role": "user", "content": prompt_text}
             ],
             temperature=0
@@ -196,56 +196,6 @@ def delete_vector_db(vector_db: Optional[Chroma]) -> None:
     else:
         st.error("No vector database found to delete.")
         logger.warning("Attempted to delete vector DB, but none was found")
-
-def analyze_pdf(analysis_file, question: str, vector_db: Chroma) -> str:
-    """
-    Analyze a PDF file against the baseline knowledge.
-    
-    Args:
-        analysis_file: PDF file to analyze
-        question: User's question about the PDF
-        vector_db: Baseline knowledge vector database
-    """
-    logger.info(f"Analyzing PDF: {analysis_file.name}")
-    temp_dir = tempfile.mkdtemp()
-    
-    try:
-        # Save and process the analysis PDF
-        path = os.path.join(temp_dir, analysis_file.name)
-        with open(path, "wb") as f:
-            f.write(analysis_file.getvalue())
-        
-        loader = UnstructuredPDFLoader(path)
-        pdf_content = loader.load()
-        
-        # Create the prompt with both the PDF content and question
-        pdf_text = "\n\n".join([doc.page_content for doc in pdf_content])
-        
-        prompt_text = f"""Analyze the following PDF content using your baseline knowledge.
-
-        PDF Content to Analyze:
-        {pdf_text}
-        
-        Question: {question}
-        
-        Please provide a detailed analysis based on the baseline knowledge."""
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert analyst. Use your baseline knowledge to analyze the provided PDF content."},
-                {"role": "user", "content": prompt_text}
-            ],
-            temperature=0
-        )
-        
-        return response.choices[0].message.content
-        
-    except Exception as e:
-        logger.error(f"Error analyzing PDF: {str(e)}")
-        raise e
-    finally:
-        shutil.rmtree(temp_dir)
 
 def get_baseline_documents() -> List[str]:
     """Get a list of documents in the baseline knowledge base."""
@@ -330,13 +280,6 @@ def main() -> None:
 
     # Chat interface
     with col2:
-        # Add analysis PDF upload
-        analysis_file = st.file_uploader(
-            "Upload a PDF for analysis (will not affect baseline)",
-            type="pdf",
-            key="analysis_uploader"
-        )
-        
         message_container = st.container(height=500, border=True)
         
         # Display chat history
@@ -355,19 +298,11 @@ def main() -> None:
                 with message_container.chat_message("assistant", avatar="🤖"):
                     with st.spinner(":green[processing...]"):
                         if st.session_state["vector_db"] is not None:
-                            if analysis_file:
-                                # Process question with analysis file
-                                response = analyze_pdf(
-                                    analysis_file,
-                                    prompt,
-                                    st.session_state["vector_db"]
-                                )
-                            else:
-                                # Regular question processing
-                                response = process_question(
-                                    prompt,
-                                    st.session_state["vector_db"]
-                                )
+                            # Remove analysis_file conditional and just process question
+                            response = process_question(
+                                prompt,
+                                st.session_state["vector_db"]
+                            )
                             st.markdown(response)
                         else:
                             st.warning("Please upload a baseline PDF file first.")
