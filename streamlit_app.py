@@ -221,12 +221,7 @@ def main() -> None:
         st.session_state["vector_db"] = initialize_baseline_db()
         st.session_state["baseline_docs"] = get_baseline_documents()
 
-    # Display baseline knowledge base info
-    with col1.expander("📖 Baseline Knowledge Base"):
-        st.write("The following documents are part of the baseline knowledge:")
         for doc in st.session_state.get("baseline_docs", []):
-            st.write(f"- {doc}")
-
     # Regular file upload
     file_upload = col1.file_uploader(
         "Upload a PDF file for analysis ↓", 
