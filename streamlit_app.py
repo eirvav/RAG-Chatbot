@@ -78,41 +78,52 @@ def initialize_baseline_db() -> Chroma:
         logger.error(f"Failed to initialize baseline DB: {e}")
         return None
 
-def create_vector_db(file_upload) -> Chroma:
+def create_vector_db(file_upload, existing_db: Optional[Chroma] = None) -> Chroma:
     """
-    Create a vector database from an uploaded PDF file.
+    Create or update a vector database from an uploaded PDF file.
 
     Args:
         file_upload (st.UploadedFile): Streamlit file upload object containing the PDF.
+        existing_db (Optional[Chroma]): Existing vector database to merge with, if any.
 
     Returns:
         Chroma: A vector store containing the processed document chunks.
     """
-    logger.info(f"Creating vector DB from file upload: {file_upload.name}")
+    logger.info(f"Processing file upload: {file_upload.name}")
     temp_dir = tempfile.mkdtemp()
 
-    path = os.path.join(temp_dir, file_upload.name)
-    with open(path, "wb") as f:
-        f.write(file_upload.getvalue())
-        logger.info(f"File saved to temporary path: {path}")
-        loader = UnstructuredPDFLoader(path)
-        data = loader.load()
+    try:
+        # Process new file
+        path = os.path.join(temp_dir, file_upload.name)
+        with open(path, "wb") as f:
+            f.write(file_upload.getvalue())
+            logger.info(f"File saved to temporary path: {path}")
+            loader = UnstructuredPDFLoader(path)
+            data = loader.load()
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=7500, chunk_overlap=100)
-    chunks = text_splitter.split_documents(data)
-    logger.info("Document split into chunks")
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=7500, chunk_overlap=100)
+        new_chunks = text_splitter.split_documents(data)
+        logger.info("Document split into chunks")
 
-    # Updated embeddings configuration
-    vector_db = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        collection_name="myRAG"
-    )
-    logger.info("Vector DB created")
+        if existing_db is None:
+            # Create new vector store if none exists
+            vector_db = Chroma.from_documents(
+                documents=new_chunks,
+                embedding=embeddings,
+                collection_name="myRAG"
+            )
+            logger.info("New vector DB created")
+        else:
+            # Add new documents to existing vector store
+            existing_db.add_documents(new_chunks)
+            vector_db = existing_db
+            logger.info("Documents added to existing vector DB")
 
-    shutil.rmtree(temp_dir)
-    logger.info(f"Temporary directory {temp_dir} removed")
-    return vector_db
+        return vector_db
+
+    finally:
+        shutil.rmtree(temp_dir)
+        logger.info(f"Temporary directory {temp_dir} removed")
 
 
 def process_question(question: str, vector_db: Chroma) -> str:
@@ -232,9 +243,12 @@ def main() -> None:
     if file_upload:
         if file_upload.name != st.session_state.get("current_file"):
             with st.spinner("Processing uploaded PDF..."):
-                # Create vector DB from uploaded file and merge with baseline
-                uploaded_db = create_vector_db(file_upload)
-                st.session_state["vector_db"] = uploaded_db
+                # Update existing vector DB with new file
+                updated_db = create_vector_db(
+                    file_upload, 
+                    existing_db=st.session_state["vector_db"]
+                )
+                st.session_state["vector_db"] = updated_db
                 
                 # Extract and store PDF pages for display
                 pdf_pages = extract_all_pages_as_images(file_upload)
@@ -262,15 +276,40 @@ def main() -> None:
                 for page_image in st.session_state["pdf_pages"]:
                     st.image(page_image, width=zoom_level)
 
+    # Button container for delete and clear actions
+    button_col1, button_col2 = col1.columns(2)
+    
     # Delete collection button
-    delete_collection = col1.button(
+    delete_collection = button_col1.button(
         "⚠️ Delete collection", 
         type="secondary",
         key="delete_button"
     )
 
+    # Clear chat button
+    clear_chat = button_col2.button(
+        "🧹 Clear Chat",
+        type="secondary",
+        key="clear_chat"
+    )
+
     if delete_collection:
         delete_vector_db(st.session_state["vector_db"])
+        
+    if clear_chat:
+        # Clear all chat-related session state
+        for key in list(st.session_state.keys()):
+            if key not in ["vector_db", "baseline_docs"]:
+                del st.session_state[key]
+        
+        # Clear all cached data except baseline
+        st.cache_data.clear()
+        
+        # Reinitialize messages
+        st.session_state["messages"] = []
+        
+        # Force a complete rerun of the app
+        st.rerun()
 
     # Chat interface
     with col2:
