@@ -221,7 +221,6 @@ def main() -> None:
         st.session_state["vector_db"] = initialize_baseline_db()
         st.session_state["baseline_docs"] = get_baseline_documents()
 
-        for doc in st.session_state.get("baseline_docs", []):
     # Regular file upload
     file_upload = col1.file_uploader(
         "Upload a PDF file for analysis ↓", 
